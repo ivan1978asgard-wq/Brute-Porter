@@ -1,7 +1,10 @@
 #include <fstream>
+#include <atomic>
 #include <iostream>
 #include <libssh/libssh.h>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace std;
@@ -99,6 +102,7 @@ int main() {
     int port;
     string username;
     string password;
+    int threadCount;
 
     cout << "[?] SSH port: ";
     cin >> port;
@@ -106,14 +110,42 @@ int main() {
     cin >> username;
     cout << "[?] Password: ";
     cin >> password;
+    cout << "[?] Thread count: ";
+    cin >> threadCount;
 
-    Stats stats;
-    for (const auto& host : targets) {
-        stats.check++;
-        const bool success = authorizeSsh(host, port, username, password);
-        if (success) stats.valid++;
-        else stats.bad++;
-        printStats(stats);
+    if (threadCount <= 0) {
+        cout << "[-] Invalid thread count" << endl;
+        return 1;
+    }
+
+    atomic<size_t> nextIndex(0);
+    atomic<int> check(0);
+    atomic<int> valid(0);
+    atomic<int> bad(0);
+    mutex statsMutex;
+    vector<thread> workers;
+    workers.reserve(static_cast<size_t>(threadCount));
+
+    for (int i = 0; i < threadCount; i++) {
+        workers.emplace_back([&]() {
+            while (true) {
+                const size_t index = nextIndex.fetch_add(1);
+                if (index >= targets.size()) break;
+
+                const bool success = authorizeSsh(targets[index], port, username, password);
+
+                lock_guard<mutex> lock(statsMutex);
+                check++;
+                if (success) valid++;
+                else bad++;
+                const Stats stats{check.load(), valid.load(), bad.load()};
+                printStats(stats);
+            }
+        });
+    }
+
+    for (auto& worker : workers) {
+        worker.join();
     }
 
     cout << endl;

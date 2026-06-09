@@ -23,7 +23,7 @@ sudo apt install libssh-dev build-essential
 ## Сборка
 
 ```bash
-g++ brute-porter.cpp -o brute-porter -lssh
+g++ brute-porter.cpp -o brute-porter -lssh -pthread
 ```
 
 ## Запуск
@@ -39,4 +39,5 @@ g++ brute-porter.cpp -o brute-porter -lssh
    - `2` — файл со списком хостов (по одному в строке)
 2. Укажите порт SSH
 3. Укажите `username` и `password`
-4. Получите итоговую статистику в формате `check/valid/bad`
+4. Укажите количество потоков для проверки
+5. Получите итоговую статистику в формате `check/valid/bad`
