@@ -1,5 +1,6 @@
 #include <fstream>
 #include <atomic>
+#include <algorithm>
 #include <iostream>
 #include <libssh/libssh.h>
 #include <mutex>
@@ -119,14 +120,15 @@ int main() {
     }
 
     atomic<size_t> nextIndex(0);
-    atomic<int> check(0);
-    atomic<int> valid(0);
-    atomic<int> bad(0);
+    const size_t effectiveThreadCount =
+        min(static_cast<size_t>(threadCount), targets.size());
+
+    Stats stats;
     mutex statsMutex;
     vector<thread> workers;
-    workers.reserve(static_cast<size_t>(threadCount));
+    workers.reserve(effectiveThreadCount);
 
-    for (int i = 0; i < threadCount; i++) {
+    for (size_t i = 0; i < effectiveThreadCount; i++) {
         workers.emplace_back([&]() {
             while (true) {
                 const size_t index = nextIndex.fetch_add(1);
@@ -135,10 +137,9 @@ int main() {
                 const bool success = authorizeSsh(targets[index], port, username, password);
 
                 lock_guard<mutex> lock(statsMutex);
-                check++;
-                if (success) valid++;
-                else bad++;
-                const Stats stats{check.load(), valid.load(), bad.load()};
+                stats.check++;
+                if (success) stats.valid++;
+                else stats.bad++;
                 printStats(stats);
             }
         });
