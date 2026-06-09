@@ -98,25 +98,24 @@ bool ftpBrute(const string& username, const string& password, const string& ip, 
 
     CURL *curl;
     CURLcode res;
-    bool success = false;
     string ftp_url = "ftp://" + ip + ":" + to_string(port) + "/";
     string userpass = username + ":" + password;
 
     curl = curl_easy_init();
-    if (curl) {
-        curl_easy_setopt(curl, CURLOPT_URL, ftp_url.c_str());
-        curl_easy_setopt(curl, CURLOPT_USERPWD, userpass.c_str());
-        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
-
-        res = curl_easy_perform(curl);
-        curl_easy_cleanup(curl);
-
-        success = (res == CURLE_OK);
-    } else {
-        success = false;
+    if (!curl) {
+        updateStats(false);
+        return false;
     }
 
+    curl_easy_setopt(curl, CURLOPT_URL, ftp_url.c_str());
+    curl_easy_setopt(curl, CURLOPT_USERPWD, userpass.c_str());
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+
+    res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    const bool success = (res == CURLE_OK);
     updateStats(success);
     if (success) {
         cout << "\n" << GREEN << "[+] Success => " << username << ":" << password << RESET << endl;
@@ -129,7 +128,6 @@ bool ftpBrute(const string& username, const string& password, const string& ip, 
 bool sshBrute(const string& username, const string& password, const string& ip, int port){
 
   if (found) return false;
-  bool success = false;
 
   ssh_session session = ssh_new();
   if (!session) {
@@ -150,7 +148,6 @@ bool sshBrute(const string& username, const string& password, const string& ip, 
 
   rc = ssh_userauth_password(session,nullptr,password.c_str());
   if (rc == SSH_AUTH_SUCCESS) {
-    success = true;
     found = true;
     ssh_disconnect(session);
     ssh_free(session);
@@ -160,7 +157,7 @@ bool sshBrute(const string& username, const string& password, const string& ip, 
   }
   ssh_disconnect(session);
   ssh_free(session);
-  updateStats(success);
+  updateStats(false);
   return false;
 }
 
