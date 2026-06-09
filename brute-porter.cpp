@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iostream>
 #include <libssh/libssh.h>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -158,7 +159,23 @@ int main() {
     }
 
     // Total combinations computed on-the-fly to avoid allocating huge vector
-    const size_t totalTasks = targets.size() * logins.size() * passwords.size();
+    auto checkedMul = [](size_t a, size_t b, size_t& out) -> bool {
+        if (a == 0 || b == 0) {
+            out = 0;
+            return true;
+        }
+        if (a > numeric_limits<size_t>::max() / b) return false;
+        out = a * b;
+        return true;
+    };
+
+    size_t totalTasks = 0;
+    size_t pairCount = 0;
+    if (!checkedMul(logins.size(), passwords.size(), pairCount) ||
+        !checkedMul(targets.size(), pairCount, totalTasks)) {
+        cerr << "[-] Too many combinations (overflow)" << endl;
+        return 1;
+    }
     const size_t passCount = passwords.size();
     const size_t loginCount = logins.size();
 
