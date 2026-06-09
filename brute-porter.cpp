@@ -6,6 +6,8 @@
 
 using namespace std;
 
+constexpr int kSshTimeoutSeconds = 5;
+
 struct Stats {
     int check = 0;
     int valid = 0;
@@ -43,7 +45,7 @@ bool authorizeSsh(const string& host, int port, const string& username, const st
     ssh_options_set(session, SSH_OPTIONS_PORT, &port);
     ssh_options_set(session, SSH_OPTIONS_USER, username.c_str());
 
-    const int timeout = 5;
+    const int timeout = kSshTimeoutSeconds;
     ssh_options_set(session, SSH_OPTIONS_TIMEOUT, &timeout);
 
     bool ok = false;
@@ -94,7 +96,7 @@ int main() {
         return 1;
     }
 
-    int port = 22;
+    int port;
     string username;
     string password;
 
