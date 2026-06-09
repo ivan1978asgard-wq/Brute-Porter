@@ -60,8 +60,10 @@ bool authorizeSsh(const string& host, int port, const string& username, const st
             ssh_channel channel = ssh_channel_new(session);
             if (channel && ssh_channel_open_session(channel) == SSH_OK) {
                 if (ssh_channel_request_exec(channel, "echo ok") == SSH_OK) {
-                    char buf[64] = {};
-                    const int nbytes = ssh_channel_read(channel, buf, sizeof(buf) - 1, 0);
+                    char buf[512] = {};
+                    const int timeoutMs = kSshTimeoutSeconds * 1000;
+                    const int nbytes = ssh_channel_read_timeout(
+                        channel, buf, sizeof(buf) - 1, 0, timeoutMs);
                     if (nbytes > 0) {
                         const string response = trim(string(buf, nbytes));
                         ok = (response == "ok");
