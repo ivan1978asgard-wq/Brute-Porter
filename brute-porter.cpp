@@ -55,7 +55,19 @@ bool authorizeSsh(const string& host, int port, const string& username, const st
     bool ok = false;
     if (ssh_connect(session) == SSH_OK) {
         const int auth = ssh_userauth_password(session, nullptr, password.c_str());
-        ok = (auth == SSH_AUTH_SUCCESS);
+        if (auth == SSH_AUTH_SUCCESS) {
+            // Double-check: open a channel and execute a command to confirm real access
+            ssh_channel channel = ssh_channel_new(session);
+            if (channel && ssh_channel_open_session(channel) == SSH_OK) {
+                if (ssh_channel_request_exec(channel, "echo ok") == SSH_OK) {
+                    char buf[16] = {};
+                    const int nbytes = ssh_channel_read(channel, buf, sizeof(buf) - 1, 0);
+                    ok = (nbytes > 0);
+                }
+                ssh_channel_close(channel);
+            }
+            if (channel) ssh_channel_free(channel);
+        }
     }
 
     ssh_disconnect(session);
