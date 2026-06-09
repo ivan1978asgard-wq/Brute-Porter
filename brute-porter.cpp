@@ -201,10 +201,6 @@ void bruteWithUserListOnly(const string& ip, int port, int service, const string
         return;
     }
 
-    cout << BLUE << "[*] " << YELLOW << "Starting Brute-force" << endl;
-    cout << BLUE << "[*] " << YELLOW << "Host: " << ip << endl;
-    cout << BLUE << "[*] " << YELLOW << "Port: " << port << "\n" << endl;
-
     while (getline(file, username)) {
         if (username.empty()) continue;
 
@@ -241,10 +237,6 @@ void bruteWithPassListOnly(const string& ip, int port, int service, const string
         cout << RED << "[-] Can't open file: " << filename << RESET << endl;
         return;
     }
-
-    cout << BLUE << "[*] " << YELLOW << "Starting Brute-force" << endl;
-    cout << BLUE << "[*] " << YELLOW << "Host: " << ip << endl;
-    cout << BLUE << "[*] " << YELLOW << "Port: " << port << "\n" << endl;
 
     while (getline(file, password)) {
         if (password.empty()) continue;
@@ -284,10 +276,6 @@ void bruteWithUserAndPassList(const string& ip, int port, int service, const str
         cout << RED << "[-] Can't open one or both files" << RESET << endl;
         return;
     }
-
-    cout << BLUE << "[*] " << YELLOW << "Starting Brute-force" << endl;
-    cout << BLUE << "[*] " << YELLOW << "Host: " << ip << endl;
-    cout << BLUE << "[*] " << YELLOW << "Port: " << port << "\n" << endl;
 
     while (getline(ufile, username)) {
         if (username.empty()) continue;
@@ -439,9 +427,6 @@ int main () {
     for (size_t i = 0; i < targets.size(); ++i) {
         const string currentIp = trim(targets[i]);
         if (currentIp.empty()) continue;
-
-        banner();
-        cout << CYAN << "[!] Target: " << currentIp << RESET << endl;
 
         if (mode == 1) {
             bruteWithUserListOnly(currentIp, port, service, userFile, password, maxThread);
