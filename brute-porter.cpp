@@ -62,7 +62,10 @@ bool authorizeSsh(const string& host, int port, const string& username, const st
                 if (ssh_channel_request_exec(channel, "echo ok") == SSH_OK) {
                     char buf[16] = {};
                     const int nbytes = ssh_channel_read(channel, buf, sizeof(buf) - 1, 0);
-                    ok = (nbytes > 0);
+                    if (nbytes > 0) {
+                        const string response = trim(string(buf, nbytes));
+                        ok = (response == "ok");
+                    }
                 }
                 ssh_channel_close(channel);
             }
