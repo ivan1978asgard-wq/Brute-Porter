@@ -1,93 +1,213 @@
 # 🔐 Brute-Porter
 
-Fast and flexible SSH & FTP brute-force tool built in C++ with multi-threading support.
+Инструмент на C++ для перебора SSH/FTP-учётных данных по словарям с поддержкой многопоточности.
+
+> ⚠️ Используйте только в легальных целях: на собственной инфраструктуре или при наличии официального разрешения.
 
 ---
 
-## 🌟 Overview
+## 🎯 Что умеет программа
 
-**Brute-Porter** is a lightweight, powerful brute-forcer that supports **SSH** and **FTP** services. Whether you're conducting a penetration test or studying authentication protocols, this tool gives you fast and efficient brute-force capabilities with colorful terminal output and flexible attack modes.
-
----
-
-## 🎯 Features
-
-- 🔓 SSH & FTP brute-force support
-- ⚡ Multi-threaded performance
-- 🧾 Wordlist-based attacks (usernames, passwords, or both)
-- 🔍 Target host and port scanner built-in
-- 🖥️ Clean and colorful terminal UI
+- Поддержка сервисов: **SSH** и **FTP**
+- Три режима атаки (по списку логинов, по списку паролей, полный перебор)
+- Проверка доступности хоста перед запуском
+- Проверка доступности выбранного порта
+- Многопоточный запуск попыток
+- Цветной консольный вывод
 
 ---
 
-## 🧰 Requirements
+## 🧰 Зависимости
 
-- **C++11+**
+- C++11+
 - `libssh`
 - `libcurl`
 - `pthread`
 
-### 🧪 Install dependencies
+### Установка зависимостей
 
-**Debian based distro**
+**Debian/Ubuntu**
 ```bash
 sudo apt install libssh-dev libcurl4-openssl-dev build-essential
 ```
 
-**Arch based distro**
+**Arch**
 ```bash
 sudo pacman -S libssh curl
 ```
-**Termux (Android)**
+
+**Termux**
 ```bash
 pkg update && pkg upgrade
 pkg install git clang openssl curl libssh
 ```
+
 ---
 
-## ⚙️ Compile
+## ⚙️ Сборка
+
 **Linux**
 ```bash
 g++ brute-porter.cpp -o brute-porter -lssh -lcurl -pthread
 ```
-**Termux (Android)**
+
+**Termux**
 ```bash
 clang++ brute-porter.cpp -o brute-porter -lssh -lcurl
 ```
 
 ---
 
-## 🚀 Run
+## 🚀 Запуск
+
 ```bash
 ./brute-porter
 ```
 
 ---
 
-## 📌 Supported Attack Modes
+## 📘 Подробная справка по работе программы
 
-### Mode	Description
+Ниже — полный сценарий работы с пояснением каждого шага.
 
-- 1	Brute usernames with a known pass
-- 2	Brute passwords with a known user
-- 3	Full brute-force (user + pass list)
+### 1) Ввод целевого IP
 
+После старта программа просит:
+```text
+[?] Enter target IP:
+```
 
+Вы вводите IPv4-адрес цели, например `192.168.0.101`.
+
+### 2) Проверка, что хост доступен
+
+Программа автоматически пытается подключиться к набору распространённых портов (21, 22, 80, 443 и др.), чтобы понять, «жив» ли хост:
+
+- если хост недоступен — работа завершается;
+- если доступен — программа продолжает.
+
+### 3) Выбор сервиса
+
+Появляется меню:
+```text
+[1] SSH
+[2] FTP
+```
+
+- `1` — атака через SSH-аутентификацию;
+- `2` — атака через FTP-аутентификацию.
+
+Если введено что-то кроме `1` или `2`, программа завершится с ошибкой.
+
+### 4) Ввод порта
+
+Программа подсказывает типичный порт:
+- SSH: `22`
+- FTP: `20,21`
+
+После этого вы вручную вводите конкретный порт, который хотите атаковать.
+
+Затем выполняется отдельная проверка порта:
+- если порт закрыт — завершение;
+- если открыт — переход к выбору режима.
+
+### 5) Выбор режима перебора
+
+Меню режимов:
+```text
+[1] Username Brute-force
+[2] Password Brute-force
+[3] Both Unknown (Use wordlists)
+```
+
+#### Режим 1 — перебор логинов (пароль известен)
+Вы указываете:
+- файл со списком логинов;
+- один фиксированный пароль;
+- число потоков.
+
+Программа берёт каждый логин из файла и пробует его с заданным паролем.
+
+#### Режим 2 — перебор паролей (логин известен)
+Вы указываете:
+- файл со списком паролей;
+- один фиксированный логин;
+- число потоков.
+
+Программа перебирает пароли из файла для одного логина.
+
+#### Режим 3 — полный перебор (логин и пароль неизвестны)
+Вы указываете:
+- файл логинов;
+- файл паролей;
+- число потоков.
+
+Программа перебирает все комбинации `логин:пароль`.
+
+### 6) Формат словарей
+
+Для `userlist` и `passlist`:
+- один логин/пароль на строку;
+- пустые строки автоматически пропускаются;
+- пути можно задавать относительные или абсолютные.
+
+Пример `users.txt`:
+```text
+admin
+root
+user
+```
+
+Пример `passwords.txt`:
+```text
+admin123
+123456
+qwerty
+```
+
+### 7) Потоки и остановка
+
+- Параметр `Max Thread` ограничивает число одновременных попыток.
+- Когда найдена валидная пара, глобальный флаг `found` останавливает дальнейший перебор.
+- Если ни одна комбинация не подошла, выводится сообщение:
+  - `[-] No valid credential found`
+
+### 8) Вывод результатов
+
+Типовые сообщения:
+- успешная попытка:
+  - `[+] Success => username:password`
+- неуспешная попытка:
+  - `[-] Failed => username:password => <причина>`
+
+Для FTP причина приходит из `libcurl`, для SSH — неуспешная авторизация/подключение.
 
 ---
 
-💡 Example Usage
-```bash
+## 🧪 Пример полного запуска
+
+```text
 [?] Enter target IP: 192.168.0.101
-[?] Choose service: 1 (SSH)
-[?] Enter port: 22
-[?] Choose mode: 3 (Full brute-force)
-[?] Enter userlist path: users.txt
-[?] Enter passlist path: passwords.txt
-[?] Max Threads: 10
-[*] Starting brute-force...
-[*] Trying: admin:admin123
+[+] The host is up
+[?] Enter service option (1-2): 1
+[?] Enter port number: 22
+[+] Port 22 is open
+[?] Choose brute-force mode (1-3): 3
+[?] Wordlist file path (userlist): users.txt
+[?] Wordlist file path (passlist): passwords.txt
+[?] Max Thread (5-10): 10
+[*] Trying admin:admin123
+[*] Trying root:123456
 ```
+
+---
+
+## ⚠️ Важные замечания
+
+- Инструмент не обходит блокировки/защиты (fail2ban, rate limit, IDS/IPS).
+- Большое число потоков может перегрузить сеть/целевой сервис.
+- Проверка «хост up/down» основана на TCP-подключениях к списку портов и не эквивалентна ICMP ping.
+- Программа рассчитана на интерактивный режим в терминале.
 
 ---
 
@@ -96,17 +216,9 @@ clang++ brute-porter.cpp -o brute-porter -lssh -lcurl
 **Name:** William Steven  
 **GitHub:** [Anon-404](https://github.com/Anon-404)
 
-
-
 ---
 
 ## 📄 License
 
 This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).  
 You are free to use, modify, and distribute this software with proper credit.
-
----
-
-## 🏷️ Tags
-
-`C++` `brute-force` `ssh` `ftp` `penetration-testing` `ethical-hacking` `cybersecurity` `multi-threading`
