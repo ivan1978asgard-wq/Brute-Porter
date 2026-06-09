@@ -185,6 +185,8 @@ int main() {
 
     Stats stats;
     mutex statsMutex;
+    vector<size_t> checkedPairsByTarget(targets.size(), 0);
+    vector<bool> hasValidByTarget(targets.size(), false);
     vector<thread> workers;
     workers.reserve(effectiveThreadCount);
 
@@ -203,15 +205,20 @@ int main() {
                     targets[ipIdx], port, logins[loginIdx], passwords[passIdx]);
 
                 lock_guard<mutex> lock(statsMutex);
-                stats.check++;
                 if (success) {
-                    stats.valid++;
                     outFile << targets[ipIdx] << " " << logins[loginIdx]
                             << " " << passwords[passIdx] << "\n";
                     outFile.flush();
-                } else {
-                    stats.bad++;
+                    hasValidByTarget[ipIdx] = true;
                 }
+
+                checkedPairsByTarget[ipIdx]++;
+                if (checkedPairsByTarget[ipIdx] == pairCount) {
+                    stats.check++;
+                    if (hasValidByTarget[ipIdx]) stats.valid++;
+                    else stats.bad++;
+                }
+
                 printStats(stats);
             }
         });
